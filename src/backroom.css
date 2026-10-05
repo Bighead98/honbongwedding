@@ -33,7 +33,8 @@
   --br-red: #ff5ddc;
   --br-white: #f8eaff;
 }
-.backroom:focus {
+.backroom:focus,
+.br-title:focus {
   outline: none;
 }
 .backroom strong,

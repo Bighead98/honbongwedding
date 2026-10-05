@@ -321,7 +321,6 @@ export default function App() {
     audio.current?.pause();
     flushSync(() => { setSecretOpen(false); setInBackroom(true); setPlaying(false); setMusicFailed(false); });
     switchMusic(config.backroom.music, true, 0, true);
-    window.scrollTo({ top: 0, behavior: "instant" });
   }
   function exitBackroom() {
     const previous = returnMusic.current;

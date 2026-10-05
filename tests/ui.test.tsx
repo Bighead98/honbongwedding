@@ -611,7 +611,9 @@ describe('BACKROOM 코드 입력과 한 음원의 전환', () => {
   const globalCancelFrame = Object.getOwnPropertyDescriptor(globalThis, 'cancelAnimationFrame');
   const scrollTo = Object.getOwnPropertyDescriptor(window, 'scrollTo');
   const scrollY = Object.getOwnPropertyDescriptor(window, 'scrollY');
+  const visualViewport = Object.getOwnPropertyDescriptor(window, 'visualViewport');
   const frames = new Map<number, FrameRequestCallback>();
+  let viewport: EventTarget;
   let nextFrame = 0;
 
   function restore(target: object, name: string, descriptor: PropertyDescriptor | undefined) {
@@ -664,6 +666,8 @@ describe('BACKROOM 코드 입력과 한 음원의 전환', () => {
   beforeEach(() => {
     frames.clear();
     nextFrame = 0;
+    viewport = new dom.window.EventTarget();
+    Object.defineProperty(window, 'visualViewport', { configurable: true, value: viewport });
     for (const target of [window, globalThis]) {
       Object.defineProperty(target, 'requestAnimationFrame', {
         configurable: true, writable: true,
@@ -690,6 +694,7 @@ describe('BACKROOM 코드 입력과 한 음원의 전환', () => {
     restore(globalThis, 'cancelAnimationFrame', globalCancelFrame);
     restore(window, 'scrollTo', scrollTo);
     restore(window, 'scrollY', scrollY);
+    restore(window, 'visualViewport', visualViewport);
     frames.clear();
   });
 
@@ -736,6 +741,79 @@ describe('BACKROOM 코드 입력과 한 음원의 전환', () => {
     assert.equal(pauseCalls, 0);
     assert.equal(loadCalls, 0);
     assert.ok(screen.getByRole('button', { name: '음악 끄기' }));
+  });
+
+  it('입장 전에 코드 입력을 blur하고 숨긴 청첩장 대신 백룸 상단 제목에 포커스한다', () => {
+    enableBackroom();
+    render(<App />);
+    window.scrollTo(0, 1560);
+    const { dialog, input } = openGate();
+    let blurredBeforeEntry = false;
+    input.addEventListener('blur', () => {
+      blurredBeforeEntry = document.getElementById('backroom') === null;
+    }, { once: true });
+    fireEvent.change(input, { target: { value: invitation.backroom!.code } });
+    fireEvent.click(within(dialog).getByRole('button', { name: '입장하기' }));
+    assert.equal(blurredBeforeEntry, true);
+    assert.equal(document.activeElement, screen.getByRole('heading', { name: '작전명: 평생 한 팀' }));
+    assert.equal(document.body.style.overflow, '');
+    assert.equal(window.scrollY, 0);
+  });
+
+  it('입장 후 프레임·모바일 키보드 viewport 변경에서 밀린 위치를 상단으로 다시 맞춘다', () => {
+    enableBackroom();
+    render(<App />);
+    window.scrollTo(0, 1560);
+    unlock();
+    assert.equal(window.scrollY, 0);
+    window.scrollTo(0, 420);
+    finishFrames();
+    assert.equal(window.scrollY, 0, '모달 정리 뒤 첫 프레임에서 상단을 유지한다.');
+    window.scrollTo(0, 760);
+    viewport.dispatchEvent(new dom.window.Event('resize'));
+    finishFrames();
+    assert.equal(window.scrollY, 0, '키보드가 닫히며 뒤늦게 이동한 위치도 보정한다.');
+    window.scrollTo(0, 250);
+    fireEvent.resize(window);
+    finishFrames();
+    assert.equal(window.scrollY, 0, 'visualViewport가 아닌 window 크기 변경도 처리한다.');
+  });
+
+  it('입장 직후 사용자가 터치·포인터·휠·키 입력을 시작하면 위치 보정을 멈춘다', () => {
+    for (const event of ['touchstart', 'pointerdown', 'wheel', 'keydown']) {
+      enableBackroom();
+      render(<App />);
+      unlock();
+      const backroom = document.getElementById('backroom');
+      assert.ok(backroom);
+      fireEvent(backroom, new dom.window.Event(event, { bubbles: true }));
+      window.scrollTo(0, 820);
+      viewport.dispatchEvent(new dom.window.Event('resize'));
+      fireEvent.resize(window);
+      finishFrames();
+      assert.equal(window.scrollY, 820, `${event} 이후에는 사용자가 선택한 위치를 유지한다.`);
+      cleanup();
+    }
+  });
+
+  it('보정 프레임이 남은 상태에서 즉시 복귀해도 이전 청첩장 위치를 덮어쓰지 않고 재입장은 상단에서 시작한다', () => {
+    enableBackroom();
+    render(<App />);
+    window.scrollTo(0, 1640);
+    const trigger = unlock();
+    fireEvent.click(screen.getAllByRole('button', { name: '원래 청첩장으로' })[0]);
+    assert.equal(window.scrollY, 1640);
+    viewport.dispatchEvent(new dom.window.Event('resize'));
+    finishFrames();
+    assert.equal(window.scrollY, 1640);
+    assert.equal(document.activeElement, trigger);
+    unlock();
+    assert.equal(window.scrollY, 0);
+    window.scrollTo(0, 500);
+    cleanup();
+    viewport.dispatchEvent(new dom.window.Event('resize'));
+    finishFrames();
+    assert.equal(window.scrollY, 500, '화면 제거 후에도 이전 보정이 실행되지 않는다.');
   });
 
   it('올바른 코드는 A를 멈춘 뒤 같은 audio로 B를 즉시 켜고 Escape 복귀에서는 멈춘 A를 유지한다', async () => {

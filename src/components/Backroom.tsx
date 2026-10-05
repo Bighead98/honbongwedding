@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type SyntheticEvent } from "react";
 import type { Photo as PhotoData } from "../config/invitation";
 import Photo from "./Photo";
+import { useBackroomEntryScroll } from "../lib/useBackroomEntryScroll";
 
 interface BackroomProps {
   photos: PhotoData[];
@@ -54,7 +55,7 @@ export default function Backroom({
   onToggleMusic,
   onExit,
 }: BackroomProps) {
-  const main = useRef<HTMLElement>(null);
+  const heading = useRef<HTMLHeadingElement>(null);
   const videoElement = useRef<HTMLVideoElement>(null);
   const [moodStep, setMoodStep] = useState(0);
   const mood = moods[moodStep % moods.length];
@@ -68,9 +69,7 @@ export default function Backroom({
       ? "다시 재생"
       : "비트 켜기";
 
-  useEffect(() => {
-    main.current?.focus({ preventScroll: true });
-  }, []);
+  useBackroomEntryScroll(heading);
 
   useLayoutEffect(() => {
     const element = videoElement.current;
@@ -216,7 +215,6 @@ export default function Backroom({
       id="backroom"
       className="backroom"
       tabIndex={-1}
-      ref={main}
       data-motion={motionEnabled ? "on" : "off"}
       data-mood={mood.theme}
       aria-label={`${names.groom}과 ${names.bride}의 Backroom`}
@@ -232,7 +230,7 @@ export default function Backroom({
         <section className="br-hero" aria-labelledby="br-title">
           <p className="br-kicker">BACKROOM</p>
           <div className="br-title-wrap">
-            <h1 id="br-title" className="br-title" aria-label="작전명: 평생 한 팀">
+            <h1 id="br-title" className="br-title" ref={heading} tabIndex={-1} aria-label="작전명: 평생 한 팀">
               <span>작전명:</span>
               <span className="br-title-room">평생 한 팀</span>
             </h1>

@@ -29,7 +29,7 @@ export default function Dialog({
     const previousHidden = background?.getAttribute("aria-hidden");
     document.body.style.overflow = "hidden";
     if (background) { background.inert = true; background.setAttribute("aria-hidden", "true"); }
-    (initialFocus?.current ?? close.current)?.focus();
+    (initialFocus?.current ?? close.current)?.focus({ preventScroll: true });
     return () => {
       document.body.style.overflow = overflow;
       if (background) {
@@ -38,7 +38,9 @@ export default function Dialog({
         else if (previousHidden === null || previousHidden === undefined) background.removeAttribute("aria-hidden");
         else background.setAttribute("aria-hidden", previousHidden);
       }
-      previous?.focus();
+      if (previous?.isConnected && !previous.closest("[hidden], [inert]")) {
+        previous.focus({ preventScroll: true });
+      }
     };
   }, [initialFocus]);
   function keyboard(event: KeyboardEvent) {

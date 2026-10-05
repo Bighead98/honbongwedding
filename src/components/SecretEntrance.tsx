@@ -22,6 +22,7 @@ export default function SecretEntrance({
       input.current?.select();
       return;
     }
+    input.current?.blur();
     onUnlock();
   }
 
