@@ -250,20 +250,20 @@ describe('사진 누락과 로딩 실패', () => {
 });
 
 describe('계좌·주소 복사와 수동 대안', () => {
-  it('계좌 아코디언을 펼치고 접으며 은행·이름 없이 계좌번호만 복사한다', async () => {
+  it('계좌 아코디언을 펼치고 접으며 은행명과 계좌번호를 함께 복사한다', async () => {
     useAccounts();
     render(<App />);
     const details = accountDetails();
     assert.equal(details.open, false);
     openAccounts();
     fireEvent.click(within(details).getByRole('button', { name: '복사' }));
-    await waitFor(() => assert.deepEqual(copied, ['000-0000-0000']));
-    await waitFor(() => assert.match(screen.getByRole('status').textContent ?? '', /계좌번호를 복사했어요/));
+    await waitFor(() => assert.deepEqual(copied, ['검증 은행 000-0000-0000']));
+    await waitFor(() => assert.match(screen.getByRole('status').textContent ?? '', /은행명과 계좌번호를 복사했어요/));
     fireEvent.click(within(details).getByText('신랑 측'));
     assert.equal(details.open, false);
   });
 
-  it('신랑·신부 계좌 그룹을 독립적으로 펼치고 신부 측 세 이름의 번호만 정확히 복사한다', async () => {
+  it('신랑·신부 계좌 그룹을 독립적으로 펼치고 각 계좌의 은행명과 번호를 정확히 복사한다', async () => {
     useAccounts();
     invitation.accounts[0].items.push({
       ...invitation.accounts[0].items[0], id: 'test-groom-parent',
@@ -278,7 +278,7 @@ describe('계좌·주소 복사와 수동 대안', () => {
       id: 'test-bride-group', title: '신부 측',
       items: brideAccounts.map((account, index) => ({
         ...account, id: 'test-bride-account-' + index,
-        holder: account.name, bank: '검증 은행', consent: true, sample: false,
+        holder: account.name, bank: `검증 은행 ${index + 1}`, consent: true, sample: false,
       })),
     });
     render(<App />);
@@ -304,7 +304,7 @@ describe('계좌·주소 복사와 수동 대안', () => {
       const button = within(row).getByRole<HTMLButtonElement>('button', { name: '복사' });
       assert.equal(button.disabled, false);
       await act(async () => { fireEvent.click(button); });
-      assert.deepEqual(copied, brideAccounts.slice(0, index + 1).map(item => item.number));
+      assert.deepEqual(copied, brideAccounts.slice(0, index + 1).map((item, bankIndex) => `검증 은행 ${bankIndex + 1} ${item.number}`));
     }
     fireEvent.click(within(bride).getByText('신부 측', { selector: 'summary' }));
     assert.equal(bride.open, false);
@@ -329,7 +329,7 @@ describe('계좌·주소 복사와 수동 대안', () => {
     assert.deepEqual(copied, []);
   });
 
-  it('클립보드 거절 시 번호를 직접 선택할 수 있고 좌우키 선택과 Escape 복구를 허용한다', async () => {
+  it('클립보드 거절 시 은행명과 번호를 직접 선택할 수 있고 좌우키 선택과 Escape 복구를 허용한다', async () => {
     useAccounts();
     setClipboard(async () => { throw new dom.window.DOMException('denied', 'NotAllowedError'); });
     render(<App />);
@@ -339,7 +339,7 @@ describe('계좌·주소 복사와 수동 대안', () => {
     fireEvent.click(trigger);
     const dialog = await screen.findByRole('dialog', { name: '계좌번호 직접 복사' });
     const textarea = within(dialog).getByLabelText<HTMLTextAreaElement>('계좌번호');
-    assert.equal(textarea.value, '000-0000-0000');
+    assert.equal(textarea.value, '검증 은행 000-0000-0000');
     assert.equal(textarea.readOnly, true);
     fireEvent.click(within(dialog).getByRole('button', { name: '내용 선택' }));
     assert.ok(document.activeElement === textarea, '내용 선택 버튼이 텍스트 영역에 포커스한다.');
@@ -1035,13 +1035,42 @@ describe('BACKROOM 코드 입력과 한 음원의 전환', () => {
 });
 
 describe('공유 대안과 연락·지도 설정', () => {
-  it('카카오 키가 없으면 SDK를 로드하지 않고 현재 청첩장 URL을 복사한다', async () => {
+  it('카카오 키가 없으면 소개말과 현재 URL을 복사하고 링크 버튼은 주소만 복사한다', async () => {
     invitation.share.siteUrl = '';
     render(<App />);
-    fireEvent.click(screen.getByRole('button', { name: '카카오톡에 링크 복사' }));
-    await waitFor(() => assert.deepEqual(copied, ['https://invitation.test/preview']));
+    fireEvent.click(screen.getByRole('button', { name: '카카오톡 초대글 복사' }));
+    await waitFor(() => assert.deepEqual(copied, [
+      '검증 신랑 그리고 검증 신부, 결혼합니다 💍\n' +
+      '평생 함께 웃고 놀기로 한 저희의 시작을 축복해 주세요.\n\n' +
+      '함께해 주세요.\n\nhttps://invitation.test/preview',
+    ]));
     await waitFor(() => assert.match(screen.getByRole('status').textContent ?? '', /카카오톡 대화창에 붙여넣어/));
     assert.equal(document.querySelector('script[src*="kakao"]'), null);
+    fireEvent.click(screen.getByRole('button', { name: '링크 복사' }));
+    await waitFor(() => assert.equal(copied.length, 2));
+    assert.equal(copied[1], 'https://invitation.test/preview');
+  });
+
+  it('카카오 초대글은 설정된 대표 URL을 사용하고 복사 거절 시 같은 내용을 직접 선택하게 한다', async () => {
+    const attempted: string[] = [];
+    setClipboard(async value => {
+      attempted.push(value);
+      throw new dom.window.DOMException('denied', 'NotAllowedError');
+    });
+    render(<App />);
+    fireEvent.click(screen.getByRole('button', { name: '카카오톡 초대글 복사' }));
+    const dialog = await screen.findByRole('dialog', { name: '카카오톡 초대글 직접 복사' });
+    const field = within(dialog).getByLabelText<HTMLTextAreaElement>('카카오톡 초대글');
+    assert.equal(attempted.length, 1);
+    assert.equal(field.value, attempted[0]);
+    assert.match(field.value, /검증 신랑 그리고 검증 신부, 결혼합니다/);
+    assert.match(field.value, /시작을 축복해 주세요/);
+    assert.ok(field.value.endsWith('\n\nhttps://hojeong-sojeong.test'));
+    assert.equal(field.value.includes('https://invitation.test/preview'), false);
+    fireEvent.click(within(dialog).getByRole('button', { name: '내용 선택' }));
+    assert.equal(field.selectionStart, 0);
+    assert.equal(field.selectionEnd, field.value.length);
+    assert.deepEqual(copied, []);
   });
 
   it('카카오 SDK 초기화 전에는 공유를 막고 준비되면 탭 안에서 정확한 피드를 즉시 전달한다', async () => {
@@ -1080,7 +1109,7 @@ describe('공유 대안과 연락·지도 설정', () => {
     assert.equal(document.querySelector('script[src*="kakao"]'), null);
   });
 
-  it('이미 초기화된 카카오 SDK는 다시 초기화하지 않고 공유 오류를 링크 복사로 처리한다', async () => {
+  it('이미 초기화된 카카오 SDK는 다시 초기화하지 않고 공유 오류를 초대글 복사로 처리한다', async () => {
     invitation.share.kakaoJavaScriptKey = 'synthetic-test-key';
     let initCalls = 0;
     let sendCalls = 0;
@@ -1095,13 +1124,15 @@ describe('공유 대안과 연락·지도 설정', () => {
     assert.equal(initCalls, 0);
     fireEvent.click(button);
     assert.equal(sendCalls, 1);
-    await waitFor(() => assert.deepEqual(copied, [invitation.share.siteUrl]));
-    await waitFor(() => assert.match(screen.getByRole('status').textContent ?? '', /카카오톡 연결 대신 링크를 복사/));
+    await waitFor(() => assert.equal(copied.length, 1));
+    assert.match(copied[0], /검증 신랑 그리고 검증 신부, 결혼합니다/);
+    assert.ok(copied[0].endsWith('\n\n' + invitation.share.siteUrl));
+    await waitFor(() => assert.match(screen.getByRole('status').textContent ?? '', /카카오톡 연결 대신 초대글과 링크를 복사/));
     assert.equal(button.disabled, false);
     assert.ok(screen.getByRole('heading', { level: 1 }));
   });
 
-  it('SDK 로딩 실패 시 준비 중 상태를 풀고 네트워크 없이 링크 복사 대안을 제공한다', async () => {
+  it('SDK 로딩 실패 시 준비 중 상태를 풀고 네트워크 없이 초대글 복사 대안을 제공한다', async () => {
     invitation.share.kakaoJavaScriptKey = 'synthetic-test-key';
     render(<App />);
     const button = screen.getByRole<HTMLButtonElement>('button', { name: '카카오톡 준비 중' });
@@ -1112,10 +1143,12 @@ describe('공유 대안과 연락·지도 설정', () => {
     // jsdom의 외부 리소스 로드는 꺼져 있다. 실패 이벤트만 직접 전달한다.
     fireEvent.error(script);
     await waitFor(() => assert.equal(button.disabled, false));
-    assert.equal(button.textContent, '카카오톡에 링크 복사');
+    assert.equal(button.textContent, '카카오톡 초대글 복사');
     assert.equal(document.querySelector('script[src*="kakao"]'), null);
     fireEvent.click(button);
-    await waitFor(() => assert.deepEqual(copied, [invitation.share.siteUrl]));
+    await waitFor(() => assert.equal(copied.length, 1));
+    assert.match(copied[0], /검증 신랑 그리고 검증 신부, 결혼합니다/);
+    assert.ok(copied[0].endsWith('\n\n' + invitation.share.siteUrl));
     await waitFor(() => assert.match(screen.getByRole('status').textContent ?? '', /카카오톡 대화창에 붙여넣어/));
   });
 
@@ -1158,6 +1191,15 @@ describe('공유 대안과 연락·지도 설정', () => {
     assert.ok(kakao.getAttribute('href')?.startsWith('https://map.kakao.com/link/search/'));
     assert.equal(naver.getAttribute('target'), '_blank');
     assert.match(naver.getAttribute('rel') ?? '', /noopener/);
+  });
+
+  it('설정된 카카오 장소 링크를 좌표 없이도 지도 버튼에 적용한다', () => {
+    invitation.venue.kakaoUrl = 'https://place.map.kakao.com/803348028';
+    render(<App />);
+    const kakao = screen.getByRole('link', { name: '카카오맵' });
+    assert.equal(kakao.getAttribute('href'), 'https://place.map.kakao.com/803348028');
+    assert.equal(kakao.getAttribute('target'), '_blank');
+    assert.match(kakao.getAttribute('rel') ?? '', /noopener/);
   });
 });
 

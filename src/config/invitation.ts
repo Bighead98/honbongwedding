@@ -54,6 +54,7 @@ export interface Invitation {
     notices?: string[];
     mapImage?: string;
     naverUrl?: string;
+    kakaoUrl?: string;
     website?: string;
   };
   text: { opening: string; invitation: string[]; closing: string[]; notice?: string };
@@ -153,6 +154,7 @@ export const invitation: Invitation = {
     mapImage: "/images/venue-map.svg",
     website: "https://signatureconvention.com/",
     naverUrl: "https://naver.me/xFLuQhhM", // 공식 오시는 길에서 제공하는 장소 링크
+    kakaoUrl: "https://place.map.kakao.com/803348028",
   },
   text: {
     opening: "평생 같이 놀 사람을 찾았습니다",

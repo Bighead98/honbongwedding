@@ -358,6 +358,15 @@ export default function App() {
     }
   }
   const shareUrl = () => config.share.siteUrl || window.location.href;
+  const kakaoInvitation = () =>
+    [
+      `${config.couple.groom} 그리고 ${config.couple.bride}, 결혼합니다 💍`,
+      "평생 함께 웃고 놀기로 한 저희의 시작을 축복해 주세요.",
+      "",
+      config.share.description,
+      "",
+      shareUrl(),
+    ].join("\n");
   async function nativeShare() {
     if (navigator.share)
       try {
@@ -375,9 +384,9 @@ export default function App() {
   async function kakaoShare() {
     if (!kakaoReady || !window.Kakao) {
       await copy(
-        shareUrl(),
-        "청첩장 링크",
-        "링크를 복사했어요. 카카오톡 대화창에 붙여넣어 주세요.",
+        kakaoInvitation(),
+        "카카오톡 초대글",
+        "초대글과 링크를 복사했어요. 카카오톡 대화창에 붙여넣어 주세요.",
       );
       return;
     }
@@ -407,9 +416,9 @@ export default function App() {
       });
     } catch {
       await copy(
-        shareUrl(),
-        "청첩장 링크",
-        "카카오톡 연결 대신 링크를 복사했어요. 대화창에 붙여넣어 주세요.",
+        kakaoInvitation(),
+        "카카오톡 초대글",
+        "카카오톡 연결 대신 초대글과 링크를 복사했어요. 대화창에 붙여넣어 주세요.",
       );
     } finally {
       setSharing(false);
@@ -722,7 +731,13 @@ export default function App() {
                             <button
                               className="button copy-button"
                               disabled={!enabled}
-                              onClick={() => copy(account.number!, "계좌번호")}
+                              onClick={() =>
+                                copy(
+                                  `${account.bank.trim()} ${account.number!.trim()}`,
+                                  "계좌번호",
+                                  "은행명과 계좌번호를 복사했어요.",
+                                )
+                              }
                             >
                               <Icon name="copy" size={14} />
                               복사
@@ -763,7 +778,7 @@ export default function App() {
                 disabled={sharing || (hasKakao && !kakaoReady && !kakaoFailed)}
               >
                 <Icon name="message" size={17} />
-                {sharing ? "연결 중" : hasKakao && !kakaoReady && !kakaoFailed ? "카카오톡 준비 중" : !hasKakao || kakaoFailed ? "카카오톡에 링크 복사" : "카카오톡으로 전하기"}
+                {sharing ? "연결 중" : hasKakao && !kakaoReady && !kakaoFailed ? "카카오톡 준비 중" : !hasKakao || kakaoFailed ? "카카오톡 초대글 복사" : "카카오톡으로 전하기"}
               </button>
               <div className="share-secondary">
                 <button

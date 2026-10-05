@@ -27,7 +27,7 @@ https://map.kakao.com/link/to/{장소명},{위도},{경도}
 https://map.kakao.com/link/search/{검색어}
 ```
 
-장소명·검색어에는 `encodeURIComponent`를 적용한다. 좌표는 위도, 경도 순서다. 좌표나 장소 ID가 확정되면 특정 장소 링크를 우선하고, 좌표가 없으면 확정한 이름·주소 검색을 사용한다. 앱 설치나 위치 권한을 초안 방문의 필수 조건으로 만들지 않는다.
+장소명·검색어에는 `encodeURIComponent`를 적용한다. 좌표는 위도, 경도 순서다. 현재 `venue.kakaoUrl`에는 사용자가 제공한 [웨딩 시그니처 장소 링크](https://place.map.kakao.com/803348028)를 넣어 우선 사용한다. 이 설정이 없으면 기존 좌표 링크를 사용하고, 좌표도 없으면 확정한 이름·주소 검색을 사용한다. 앱 설치나 위치 권한을 초안 방문의 필수 조건으로 만들지 않는다.
 
 ## 카카오톡 공유
 
@@ -56,13 +56,13 @@ https://map.kakao.com/link/search/{검색어}
 ></script>
 ```
 
-설치·초기화 기준은 [공식 JavaScript 시작하기](https://developers.kakao.com/docs/ko/javascript/getting-started)를 따른다. 버전을 바꾸면 URL과 SRI를 함께 갱신한다. 로딩 오류는 화면 전체를 깨뜨리지 않고 링크 복사 대체로 처리한다.
+설치·초기화 기준은 [공식 JavaScript 시작하기](https://developers.kakao.com/docs/ko/javascript/getting-started)를 따른다. 버전을 바꾸면 URL과 SRI를 함께 갱신한다. 로딩 오류는 화면 전체를 깨뜨리지 않고 소개말·예식 설명·대표 URL을 함께 복사하는 대안으로 처리한다.
 
-### 키가 없는 상태의 대체 동작
+### SDK 미설정·실패 시 대체 동작
 
-JavaScript 키·운영 도메인이 준비되지 않으면 카카오 공유가 연결된 것처럼 표시하지 않는다. ‘링크 복사’를 제공하고, 지원하는 기기에서는 `navigator.share()`로 기본 공유 화면을 연다. 사용자가 카카오톡을 공유 대상으로 선택할 수 있는지는 기기 환경에 달려 있으며 직접 카카오톡 공유 성공을 보장하지 않는다.
+카카오 버튼은 JavaScript SDK가 미설정이거나 로딩·공유 호출이 실패하면 **소개말·예식 설명·대표 URL**을 함께 복사하고 카카오톡 대화창에 붙여넣도록 안내한다. ‘링크 복사’ 버튼은 URL만 복사한다. 지원하는 기기에서는 `navigator.share()`로 기본 공유 화면을 열고, 기본 공유가 미지원·실패하면 URL을 복사한다. 사용자가 카카오톡을 공유 대상으로 선택할 수 있는지는 기기 환경에 달려 있으며 직접 카카오톡 공유 성공을 보장하지 않는다.
 
-[Web Share 공식 개발자 문서](https://developer.mozilla.org/en-US/docs/Web/API/Navigator/share)에 따라 HTTPS·기기 지원 여부·버튼 탭이 필요하며, 공유 취소는 실패 메시지로 몰아가지 않는다. [Clipboard 문서](https://developer.mozilla.org/en-US/docs/Web/API/Clipboard/writeText)에 따라 복사 권한 거절이나 미지원 환경을 처리하고, 직접 선택할 수 있는 URL/계좌번호/주소를 제공한다. SDK 메서드 호출만으로 메시지가 전송됐다고 확정하지 않는다.
+[Web Share 공식 개발자 문서](https://developer.mozilla.org/en-US/docs/Web/API/Navigator/share)에 따라 HTTPS·기기 지원 여부·버튼 탭이 필요하며, 공유 취소는 실패 메시지로 몰아가지 않는다. [Clipboard 문서](https://developer.mozilla.org/en-US/docs/Web/API/Clipboard/writeText)에 따라 복사 권한 거절이나 미지원 환경을 처리하고, 직접 선택할 수 있는 초대글/URL/은행명과 계좌번호/주소를 제공한다. 계좌 복사 값은 **`은행명 계좌번호`** 형식이며 예금주는 제외한다. SDK 메서드 호출만으로 메시지가 전송됐다고 확정하지 않는다.
 
 ## OG 미리보기
 
@@ -78,7 +78,7 @@ JavaScript 키·운영 도메인이 준비되지 않으면 카카오 공유가 �
 - 네이버·카카오 지도 앱 설치/미설치 상황을 모두 확인한다.
 - 주소 복사 결과에 장소 이름 등 불필요한 문구가 섞이지 않는지 확인한다.
 - 카카오 JavaScript SDK 도메인과 제품 링크 웹 도메인을 모두 확인한다.
-- 카카오톡 공유 화면, 취소, SDK 로딩 실패, 키 없는 대체 동작을 확인한다.
+- 카카오톡 공유 화면과 취소, SDK 미설정·로딩 실패·공유 호출 실패 시 소개말·예식 설명·대표 URL 복사, 별도 링크 복사 시 URL만 포함되는지 확인한다.
 - 최종 운영 URL을 카카오톡에 붙여넣어 대표 사진·이름·일시·설명이 정확한지 확인한다.
 
 이 문서는 등록·연동을 준비한 결과다. 실제 키 발급, 계정 생성, 도메인 등록, 카카오톡 발송, 지도 앱 전환을 완료한 결과가 아니다.

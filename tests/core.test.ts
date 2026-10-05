@@ -438,6 +438,11 @@ describe("공개 전 검사", () => {
 });
 
 describe("현재 기본 설정", () => {
+  it("카카오 지도는 사용자가 지정한 예식장 장소 링크로 연결한다", () => {
+    assert.equal(invitation.venue.kakaoUrl, "https://place.map.kakao.com/803348028");
+    assert.equal(mapLinks(invitation.venue)?.kakao, invitation.venue.kakaoUrl);
+  });
+
   it("연락처는 숨기고 신랑 측 두 계좌·신부 측 세 계좌는 번호와 공개 동의를 갖춘 실제 항목으로 지정한다", () => {
     assert.equal(invitation.privacy.showContacts, false);
     assert.equal(invitation.privacy.showAccounts, true);
@@ -475,11 +480,37 @@ describe("연락처와 지도 링크의 안전한 대안", () => {
   });
 
   it("장소 미확정·공백 이름·공백 주소에서는 실제 지도 링크를 만들지 않는다", () => {
-    const venue = configuredInvitation().venue;
+    const venue = { ...configuredInvitation().venue, kakaoUrl: "https://kakao.test/place" };
     assert.equal(mapLinks({ ...venue, confirmed: false }), null);
     assert.equal(mapLinks({ ...venue, name: "" }), null);
     assert.equal(mapLinks({ ...venue, name: "   " }), null);
     assert.equal(mapLinks({ ...venue, address: "   " }), null);
+  });
+
+  it("HTTPS 설정 지도 링크는 좌표 유무와 관계없이 생성된 대체 링크보다 우선한다", () => {
+    const venue = {
+      ...configuredInvitation().venue,
+      naverUrl: "https://naver.test/place",
+      kakaoUrl: "https://kakao.test/place",
+    };
+    for (const coords of [{ lat: 37.5, lng: 127 }, { lat: null, lng: null }]) {
+      assert.deepEqual(mapLinks({ ...venue, ...coords }), {
+        naver: venue.naverUrl,
+        kakao: venue.kakaoUrl,
+      });
+    }
+  });
+
+  it("카카오 설정 링크가 없거나 HTTPS가 아니면 좌표 길찾기·장소 검색을 유지한다", () => {
+    const venue = configuredInvitation().venue;
+    for (const kakaoUrl of [undefined, "", "http://kakao.test/place", "javascript:alert(1)"]) {
+      const coordinateLinks = mapLinks({ ...venue, kakaoUrl });
+      assert.ok(coordinateLinks);
+      assert.equal(coordinateLinks.kakao, `https://map.kakao.com/link/to/${encodeURIComponent(venue.name)},37.5,127`);
+      const searchLinks = mapLinks({ ...venue, kakaoUrl, lat: null, lng: null });
+      assert.ok(searchLinks);
+      assert.equal(searchLinks.kakao, `https://map.kakao.com/link/search/${encodeURIComponent(`${venue.name} ${venue.address}`)}`);
+    }
   });
 
   it("한글 장소명·주소를 인코딩하고 좌표가 있으면 카카오 길찾기를 사용한다", () => {

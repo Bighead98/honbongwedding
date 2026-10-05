@@ -41,9 +41,11 @@ export function mapLinks(venue: Invitation["venue"]) {
     naver: venue.naverUrl?.startsWith("https://")
       ? venue.naverUrl
       : `https://map.naver.com/v5/search/${query}`,
-    kakao: coords
-      ? `https://map.kakao.com/link/to/${encodeURIComponent(venue.name)},${venue.lat},${venue.lng}`
-      : `https://map.kakao.com/link/search/${query}`,
+    kakao: venue.kakaoUrl?.startsWith("https://")
+      ? venue.kakaoUrl
+      : coords
+        ? `https://map.kakao.com/link/to/${encodeURIComponent(venue.name)},${venue.lat},${venue.lng}`
+        : `https://map.kakao.com/link/search/${query}`,
   };
 }
 interface KakaoSdk {
