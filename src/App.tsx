@@ -165,12 +165,8 @@ export default function App() {
   const [inBackroom, setInBackroom] = useState(false);
   const audio = useRef<HTMLAudioElement>(null);
   const playAttempt = useRef(0);
+  const playbackPending = useRef(false);
   const musicWanted = useRef(Boolean(config.music.src));
-  const autoplayRetry = useRef<(() => void) | null>(null);
-  const cancelAutoplayRetry = useCallback(() => {
-    autoplayRetry.current?.();
-    autoplayRetry.current = null;
-  }, []);
   const resumePoint = useRef<number | null>(null);
   const returnMusic = useRef({ playing: false, time: 0, scroll: 0 });
   const backroomEntry = useRef<HTMLButtonElement>(null);
@@ -206,10 +202,10 @@ export default function App() {
     const player = audio.current;
     return () => {
       playAttempt.current += 1;
-      cancelAutoplayRetry();
+      playbackPending.current = false;
       player?.pause();
     };
-  }, [hasAudio, cancelAutoplayRetry]);
+  }, [hasAudio]);
   const notify = useCallback((message: string) => {
     setToast(message);
     if (toastTimer.current) clearTimeout(toastTimer.current);
@@ -228,44 +224,71 @@ export default function App() {
     backroom: boolean,
     automatic = false,
   ) {
-    cancelAutoplayRetry();
     musicWanted.current = true;
     const attempt = ++playAttempt.current;
+    playbackPending.current = true;
     try {
       await player.play();
-      if (attempt === playAttempt.current) setMusicFailed(false);
+      if (attempt === playAttempt.current) {
+        setPlaying(!player.paused);
+        setMusicFailed(false);
+      }
     } catch (error) {
       if (attempt !== playAttempt.current) return;
-      if (automatic && error instanceof Error && error.name === "NotAllowedError") {
-        const events = ["pointerup", "touchend", "click", "keydown"] as const;
-        const retry = (event: Event) => {
-          if (attempt !== playAttempt.current) return;
-          if (event instanceof window.KeyboardEvent && (event.repeat || event.isComposing)) return;
-          if (event.target instanceof window.Element && event.target.closest(".music-button, .br-music")) return;
-          void playMusic(player, backroom, true);
-        };
-        for (const event of events) document.addEventListener(event, retry);
-        autoplayRetry.current = () => {
-          for (const event of events) document.removeEventListener(event, retry);
-        };
-        return;
-      }
+      const name = error && typeof error === "object" && "name" in error ? error.name : "";
+      if (automatic && (name === "NotAllowedError" || name === "AbortError")) return;
       setPlaying(false);
       setMusicFailed(true);
       notify(backroom
         ? "비트를 재생하지 못했어요. 비트 켜기를 다시 눌러 주세요."
         : "음악을 재생하지 못했어요. 다시 누르거나 다른 브라우저에서 확인해주세요.");
+    } finally {
+      if (attempt === playAttempt.current) playbackPending.current = false;
     }
-  }, [cancelAutoplayRetry, notify]);
+  }, [notify]);
   useEffect(() => {
     if (hasMusic && audio.current) void requestPlayback(audio.current, false, true);
   }, [hasMusic, requestPlayback]);
+  useEffect(() => {
+    const player = audio.current;
+    if (!player) return;
+    const resume = (gesture = false) => {
+      if (!musicWanted.current || !player.getAttribute("src") || !player.paused || player.error) return;
+      if (!gesture && playbackPending.current) return;
+      void requestPlayback(player, inBackroom, true);
+    };
+    const onGesture = (event: Event) => {
+      if (event instanceof window.KeyboardEvent && (
+        event.repeat || event.isComposing ||
+        ["Escape", "Tab", "Shift", "Control", "Alt", "Meta"].includes(event.key)
+      )) return;
+      if (event.target instanceof window.Element && event.target.closest(".music-button, .br-music, .secret-submit, .br-exit")) return;
+      resume(true);
+    };
+    const onResume = () => resume();
+    const onVisible = () => {
+      if (document.visibilityState === "visible") resume();
+    };
+    const events = ["pointerup", "touchend", "click", "keydown"] as const;
+    for (const event of events) document.addEventListener(event, onGesture, true);
+    player.addEventListener("canplay", onResume);
+    window.addEventListener("pageshow", onResume);
+    window.addEventListener("focus", onResume);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      for (const event of events) document.removeEventListener(event, onGesture, true);
+      player.removeEventListener("canplay", onResume);
+      window.removeEventListener("pageshow", onResume);
+      window.removeEventListener("focus", onResume);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [hasAudio, inBackroom, requestPlayback]);
   function toggleMusic() {
     if (!audio.current || !currentMusic.src) return;
-    cancelAutoplayRetry();
     if (playing) {
       musicWanted.current = false;
       playAttempt.current += 1;
+      playbackPending.current = false;
       audio.current.pause();
       setPlaying(false);
     } else {
@@ -275,8 +298,8 @@ export default function App() {
   function switchMusic(track: Invitation["music"], shouldPlay: boolean, time: number, backroom: boolean) {
     const player = audio.current;
     musicWanted.current = Boolean(track.src && shouldPlay);
-    cancelAutoplayRetry();
     playAttempt.current += 1;
+    playbackPending.current = false;
     setPlaying(false);
     setMusicFailed(false);
     resumePoint.current = track.src ? time : null;
@@ -459,7 +482,7 @@ export default function App() {
         </header>
         <section className="section greeting" id="greeting">
           <SectionTitle english="INVITATION">
-            {thanks ? "감사의 마음을 전합니다" : "우리라고 불러 주세요"}
+            {thanks ? "감사의 마음을 전합니다" : "평생 같이 웃을 사람"}
           </SectionTitle>
           <div className="invitation-text">
             {(thanks ? config.text.closing : config.text.invitation).map(
@@ -796,14 +819,13 @@ export default function App() {
             try { audio.current.currentTime = resumePoint.current; resumePoint.current = null; } catch { /* 미디어를 탐색할 수 없으면 기본 위치를 유지합니다. */ }
           }}
           onPlay={(event) => {
-            if (!event.currentTarget.paused) cancelAutoplayRetry();
             setPlaying(!event.currentTarget.paused);
           }}
           onPause={(event) => setPlaying(!event.currentTarget.paused)}
           onEnded={() => setPlaying(false)}
           onError={() => {
             playAttempt.current += 1;
-            cancelAutoplayRetry();
+            playbackPending.current = false;
             setMusicFailed(true);
             setPlaying(false);
             notify(

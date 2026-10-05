@@ -396,7 +396,9 @@ describe('음악 자동 재생과 사용자 조작·실패 처리', () => {
     fireEvent.click(stop);
     assert.equal(pauseCalls, 1);
     assert.equal(screen.getByRole('button', { name: '음악 켜기' }).getAttribute('aria-pressed'), 'false');
-    fireEvent.pointerUp(document.body);
+    const target = screen.getByRole('button', { name: '링크 복사' });
+    target.addEventListener('pointerup', event => event.stopPropagation());
+    fireEvent.pointerUp(target);
     fireEvent.click(document.body);
     fireEvent.keyDown(document, { key: 'ArrowDown' });
     assert.equal(playCalls, 1, '사용자가 멈춘 음악을 후속 터치나 키보드 입력으로 재시작하지 않는다.');
@@ -419,12 +421,123 @@ describe('음악 자동 재생과 사용자 조작·실패 처리', () => {
     assert.equal(playCalls, 1);
     assert.equal(audioElement().paused, true);
     assert.equal(document.querySelector('.toast')?.textContent, '');
-    fireEvent.pointerUp(document.body);
+    const target = screen.getByRole('button', { name: '링크 복사' });
+    target.addEventListener('pointerup', event => event.stopPropagation());
+    fireEvent.pointerUp(target);
     await screen.findByRole('button', { name: '음악 끄기' });
     assert.equal(playCalls, 2);
     fireEvent.click(document.body);
     fireEvent.keyDown(document, { key: 'ArrowDown' });
-    assert.equal(playCalls, 2, '자동 시작 후에는 재시도 리스너를 제거한다.');
+    assert.equal(playCalls, 2, '이미 재생 중일 때는 다른 동작으로 중복 재생하지 않는다.');
+  });
+
+  it('첫 재생 요청의 응답 전 들어온 사용자 동작도 즉시 재생을 시도하고 늦은 거절은 무시한다', async () => {
+    enableMusic();
+    const pending: { reject?: (reason: Error) => void } = {};
+    Object.defineProperty(dom.window.HTMLMediaElement.prototype, 'play', {
+      configurable: true,
+      value: function (this: HTMLMediaElement) {
+        playCalls += 1;
+        if (playCalls === 1) return new Promise<void>((_resolve, reject) => { pending.reject = reject; });
+        Object.defineProperty(this, 'paused', { configurable: true, writable: true, value: false });
+        this.dispatchEvent(new dom.window.Event('play'));
+        return Promise.resolve();
+      },
+    });
+    render(<App />);
+    assert.equal(playCalls, 1);
+    fireEvent.touchEnd(document.body);
+    await screen.findByRole('button', { name: '음악 끄기' });
+    assert.equal(playCalls, 2);
+    await act(async () => { pending.reject?.(new dom.window.DOMException('late blocked', 'NotAllowedError')); });
+    assert.ok(screen.getByRole('button', { name: '음악 끄기' }));
+    assert.equal(document.querySelector('.toast')?.textContent, '');
+  });
+
+  it('페이지 복귀·음원 준비에서 중단된 음악을 복구하되 사용자가 끈 음악은 다시 켜지 않는다', async () => {
+    enableMusic();
+    render(<App />);
+    await screen.findByRole('button', { name: '음악 끄기' });
+    const audio = audioElement();
+    audio.currentTime = 12;
+    act(() => { audio.pause(); });
+    fireEvent(window, new dom.window.PageTransitionEvent('pageshow', { persisted: true }));
+    await screen.findByRole('button', { name: '음악 끄기' });
+    assert.equal(audio.currentTime, 12);
+    assert.equal(playCalls, 2);
+    act(() => { audio.pause(); });
+    fireEvent.canPlay(audio);
+    await screen.findByRole('button', { name: '음악 끄기' });
+    assert.equal(playCalls, 3);
+    act(() => { audio.pause(); });
+    const visibility = Object.getOwnPropertyDescriptor(document, 'visibilityState');
+    try {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+      fireEvent(document, new dom.window.Event('visibilitychange'));
+      await screen.findByRole('button', { name: '음악 끄기' });
+      assert.equal(playCalls, 4);
+      fireEvent.click(screen.getByRole('button', { name: '음악 끄기' }));
+      fireEvent(window, new dom.window.PageTransitionEvent('pageshow', { persisted: true }));
+      fireEvent.focus(window);
+      fireEvent.canPlay(audio);
+      fireEvent(document, new dom.window.Event('visibilitychange'));
+      fireEvent.click(document.body);
+      assert.equal(playCalls, 4);
+      assert.equal(audio.paused, true);
+    } finally {
+      if (visibility) Object.defineProperty(document, 'visibilityState', visibility);
+      else Reflect.deleteProperty(document, 'visibilityState');
+    }
+  });
+
+  it('자동 시작이 일시적으로 중단되면 준비 이벤트에서 재시도하고 진행 중에는 중복 요청하지 않는다', async () => {
+    enableMusic();
+    const pending: { resolve?: () => void } = {};
+    Object.defineProperty(dom.window.HTMLMediaElement.prototype, 'play', {
+      configurable: true,
+      value: function (this: HTMLMediaElement) {
+        playCalls += 1;
+        if (playCalls === 1) return Promise.reject(new dom.window.DOMException('interrupted', 'AbortError'));
+        return new Promise<void>(resolve => { pending.resolve = () => {
+          Object.defineProperty(this, 'paused', { configurable: true, writable: true, value: false });
+          resolve();
+        }; });
+      },
+    });
+    render(<App />);
+    await act(async () => {});
+    assert.equal(document.querySelector('.toast')?.textContent, '');
+    fireEvent.canPlay(audioElement());
+    assert.equal(playCalls, 2);
+    fireEvent.canPlay(audioElement());
+    fireEvent(window, new dom.window.PageTransitionEvent('pageshow', { persisted: true }));
+    assert.equal(playCalls, 2);
+    await act(async () => { pending.resolve?.(); });
+    assert.ok(screen.getByRole('button', { name: '음악 끄기' }), 'play 이벤트가 누락돼도 완료 후 실제 재생 상태를 반영한다.');
+  });
+
+  it('StrictMode 초기 정리의 늦은 재생 실패는 최종 음악 상태를 끄지 않는다', async () => {
+    enableMusic();
+    const pending: { reject?: (reason: Error) => void } = {};
+    Object.defineProperty(dom.window.HTMLMediaElement.prototype, 'play', {
+      configurable: true,
+      value: function (this: HTMLMediaElement) {
+        playCalls += 1;
+        if (playCalls === 1) return new Promise<void>((_resolve, reject) => { pending.reject = reject; });
+        Object.defineProperty(this, 'paused', { configurable: true, writable: true, value: false });
+        this.dispatchEvent(new dom.window.Event('play'));
+        return Promise.resolve();
+      },
+    });
+    render(<StrictMode><App /></StrictMode>);
+    await screen.findByRole('button', { name: '음악 끄기' });
+    assert.equal(playCalls, 2);
+    await act(async () => { pending.reject?.(new dom.window.DOMException('interrupted', 'AbortError')); });
+    assert.ok(screen.getByRole('button', { name: '음악 끄기' }));
+    assert.equal(document.querySelector('.toast')?.textContent, '');
+    fireEvent.canPlay(audioElement());
+    fireEvent.click(document.body);
+    assert.equal(playCalls, 2);
   });
 
   it('자동 재생 대기 중 음악 버튼은 중복 재생 없이 작동하고 화면 제거 후에는 재시도하지 않는다', async () => {

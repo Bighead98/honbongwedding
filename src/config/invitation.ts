@@ -155,7 +155,7 @@ export const invitation: Invitation = {
     naverUrl: "https://naver.me/xFLuQhhM", // 공식 오시는 길에서 제공하는 장소 링크
   },
   text: {
-    opening: "평생 같이 웃을 사람",
+    opening: "평생 같이 놀 사람을 찾았습니다",
     invitation: [
       "맛있는 것도 같이 먹고,",
       "재밌는 것도 같이 보고,",
