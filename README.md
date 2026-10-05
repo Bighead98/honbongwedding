@@ -27,7 +27,7 @@
 
 날짜·시각·성함·ATM 안내는 사용자에게 받았습니다. 층수·주소·교통·주차·네이버지도 링크는 공식 홈페이지를 확인했습니다. 조사 방법과 예식 전 확인 항목은 [장소 조사](docs/VENUE_RESEARCH.md)에 기록했습니다.
 
-현재는 **데모 모드의 로컬 검토본**입니다. 실제 사진·계좌·사용자 제공 배경음악을 적용했으며 연락처는 표시하지 않습니다. 도메인·카카오 JavaScript 키는 미설정입니다. 음악은 사용자 버튼으로 재생하고 스크롤 중에도 유지합니다. 기존 임시 스톡은 청첩장 설정에서 사용하지 않고 파일과 출처 기록을 보존했습니다.
+현재 설정은 **데모 모드**이며 실제 사진·계좌·사용자 제공 배경음악을 적용했고 연락처는 표시하지 않습니다. GitHub `main` 업로드와 `honbongmarry.co.kr` 도메인 구매는 완료했습니다. Cloudflare Worker `honbongwedding`의 Git 자동배포를 연결하고 있으며, 기존 Pages 설정을 Workers Static Assets 설정으로 교체했습니다. 배포 성공과 도메인·DNS·HTTPS 연결 완료 여부는 아직 검증하지 않았습니다. 카카오 JavaScript 키는 미설정입니다. 음악은 사용자 버튼으로 재생하고 스크롤 중에도 유지합니다. 기존 임시 스톡은 청첩장 설정에서 사용하지 않고 파일과 출처 기록을 보존했습니다.
 
 ## 실행
 
@@ -66,11 +66,12 @@ npm run preview
 
 전용 Node를 사용한다면 `portable.ps1`의 마지막 인자를 `typecheck`, `lint`, `test`, `build`, `preview`로 바꾸면 됩니다. 프로덕션 미리보기 기본 주소는 http://127.0.0.1:4173/ 입니다.
 
-- `npm run check:release`: 미완성 항목을 보여주되 데모 실행·빌드는 허용합니다.
+- `npm run check:release`: 미완성 항목을 보여주되 실행·빌드는 허용합니다. 현재 데모 모드, A/B 음원 게시 권한, 개인정보·사진 공개 동의의 4개 경고가 남아 있습니다. 일반 `npm run build`도 이 경고를 출력하며 빌드를 차단하지 않습니다.
 - `npm run check:publish`: 미완성 항목이 있으면 종료 코드 1로 **공개 배포를 막습니다**.
-- `npm run deploy:pages`: 엄격 검사 → 빌드 → Cloudflare Pages 업로드. **사용자가 외부 공개 배포에 승인한 뒤에만 실행**합니다. 테스트 주소도 외부 공개입니다.
+- `npm run deploy:check`: 만들어진 `dist/`를 Wrangler가 외부 업로드 없이 검사합니다. 먼저 `npm run build`를 실행합니다.
+- `npm run deploy:workers`: 엄격 검사 → 빌드 → Cloudflare Workers 배포. 기존 공개 준비 검사를 유지하며, 현재 경고가 남아 있으면 배포를 중단합니다.
 
-이번 작업에서는 도메인 구매·결제·외부 배포·DNS 변경·공개 저장소 업로드를 하지 않았습니다.
+Cloudflare의 Git 자동배포는 빌드 `npm run build`, 배포 `npx wrangler deploy`를 사용합니다. 이 경로는 `check:publish`를 호출하지 않으므로 일반 빌드의 4개 경고를 배포 실패 원인으로 취급하지 않습니다. 상세 설정은 [Workers 배포 안내](docs/DEPLOYMENT.md)에 있습니다.
 
 ## 내용 수정
 
@@ -136,9 +137,9 @@ python scripts/optimize-images.py assets/user-originals/YUP_1065.JPG wedding-106
 
 ## 도메인과 호스팅
 
-[도메인 비교·공식 구매 링크](docs/DOMAIN_RESEARCH.md)와 [Cloudflare Pages 배포·연결·운영 안내](docs/DEPLOYMENT.md)를 확인하세요. 구매할 후보의 실제 등록 가능 여부는 확인하지 않았습니다. 도메인 갱신 비용은 무료 정적 호스팅과 별개입니다.
+[Cloudflare Workers 배포·연결·운영 안내](docs/DEPLOYMENT.md)를 확인하세요. 구매한 대표 도메인은 `honbongmarry.co.kr`이며 GitHub `main`과 Worker `honbongwedding`을 사용합니다. 이전 [도메인 비교 자료](docs/DOMAIN_RESEARCH.md)는 참고 기록입니다. 도메인 갱신 비용은 정적 호스팅과 별개입니다.
 
-Cloudflare Pages용 `wrangler.jsonc`, `_headers`, `robots.txt`를 준비했습니다. 공개하려면 도메인 선택 → 계정 준비 → 엄격 검사 → 빌드 → 테스트 배포 확인 → 커스텀 도메인·DNS → HTTPS·대표주소 → 공유 등록·미리보기 검수 → 재배포 순서로 진행합니다. 기존 DNS 레코드는 기록 후 필요한 값만 수정합니다.
+`wrangler.jsonc`는 `assets.directory: './dist'`와 SPA 경로 처리를 사용하는 Workers 설정입니다. Node.js는 `.node-version`의 `24.21.0`을 사용합니다. Cloudflare의 Worker > Settings > Build에서 브랜치 `main`, 빌드 `npm run build`, 배포 `npx wrangler deploy`, 루트 디렉터리 빈 값으로 설정합니다. 공개 주소에는 Cloudflare Access 로그인 보호를 켜지 않습니다. 사용자 지정 도메인은 Worker > Settings > Domains & Routes > Add > Custom Domain에서 연결합니다. 외부 계정의 실제 배포·도메인 연결 상태는 대시보드와 HTTPS 접속으로 확인합니다.
 
 최종 HTTPS 주소를 `share.siteUrl`에 입력하고 빌드하면 초기 HTML의 `og:url`, `og:image`, canonical도 같이 반영됩니다. 자바스크립트를 실행하지 않는 카카오 크롤러에도 제목·설명·대표 이미지가 전달됩니다. 도메인이 없는 데모의 OG는 임시 상대 이미지 경로이며 실서비스 공유 검수 대상이 아닙니다.
 
@@ -150,7 +151,7 @@ Cloudflare Pages용 `wrangler.jsonc`, `_headers`, `robots.txt`를 준비했습�
 
 부모님 정보와 계좌·연락처의 공개 동의를 확인하고, 실제 개인정보가 들어간 저장소를 승인 없이 공개 저장소에 올리지 않습니다. 배포 토큰은 사용자의 로그인 세션 또는 비공개 배포 환경에서만 관리합니다.
 
-예식 후 `stage: 'thank-you'`로 바꾸면 감사 문구와 사진·공유만 남고 일시·교통·가족·연락처·계좌를 화면에서 숨깁니다. 개인정보를 배포물에서도 없애려면 연락처·계좌 배열을 비우고 재빌드·재배포하며 **이전 Pages 배포도 삭제**하세요. 표시 여부만 바꾸면 해당 값은 코드에 남을 수 있습니다. 종료 시 도메인의 자동 갱신과 이전 배포·저장소 기록도 직접 관리하세요. 공개 시작일은 미정이므로 1년 운영 종료일은 아직 확정하지 않았습니다.
+예식 후 `stage: 'thank-you'`로 바꾸면 감사 문구와 사진·공유만 남고 일시·교통·가족·연락처·계좌를 화면에서 숨깁니다. 개인정보를 배포물에서도 없애려면 연락처·계좌 배열을 비우고 재빌드·재배포하며 이전 Workers 버전·미리보기 주소와 저장소 기록도 관리하세요. 표시 여부만 바꾸면 해당 값은 코드에 남을 수 있습니다. 종료 시 도메인의 자동 갱신과 이전 배포·저장소 기록도 직접 관리하세요. 공개 시작일은 미정이므로 1년 운영 종료일은 아직 확정하지 않았습니다.
 
 ## 출처와 검증
 
