@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { invitation as config, type Invitation } from "./config/invitation";
 import {
@@ -165,6 +165,12 @@ export default function App() {
   const [inBackroom, setInBackroom] = useState(false);
   const audio = useRef<HTMLAudioElement>(null);
   const playAttempt = useRef(0);
+  const musicWanted = useRef(Boolean(config.music.src));
+  const autoplayRetry = useRef<(() => void) | null>(null);
+  const cancelAutoplayRetry = useCallback(() => {
+    autoplayRetry.current?.();
+    autoplayRetry.current = null;
+  }, []);
   const resumePoint = useRef<number | null>(null);
   const returnMusic = useRef({ playing: false, time: 0, scroll: 0 });
   const backroomEntry = useRef<HTMLButtonElement>(null);
@@ -198,13 +204,17 @@ export default function App() {
   );
   useEffect(() => {
     const player = audio.current;
-    return () => { playAttempt.current += 1; player?.pause(); };
-  }, [hasAudio]);
-  function notify(message: string) {
+    return () => {
+      playAttempt.current += 1;
+      cancelAutoplayRetry();
+      player?.pause();
+    };
+  }, [hasAudio, cancelAutoplayRetry]);
+  const notify = useCallback((message: string) => {
     setToast(message);
     if (toastTimer.current) clearTimeout(toastTimer.current);
     toastTimer.current = setTimeout(() => setToast(""), 4200);
-  }
+  }, []);
   async function copy(value: string, label: string, message?: string) {
     if (!value) {
       notify(`${label} 정보를 준비 중입니다.`);
@@ -213,42 +223,59 @@ export default function App() {
     if (await copyText(value)) notify(message ?? `${label}를 복사했어요.`);
     else setManual({ value, label });
   }
-  async function requestPlayback(player: HTMLAudioElement, backroom: boolean) {
+  const requestPlayback = useCallback(async function playMusic(
+    player: HTMLAudioElement,
+    backroom: boolean,
+    automatic = false,
+  ) {
+    cancelAutoplayRetry();
+    musicWanted.current = true;
     const attempt = ++playAttempt.current;
     try {
       await player.play();
       if (attempt === playAttempt.current) setMusicFailed(false);
-    } catch {
+    } catch (error) {
       if (attempt !== playAttempt.current) return;
+      if (automatic && error instanceof Error && error.name === "NotAllowedError") {
+        const events = ["pointerup", "touchend", "click", "keydown"] as const;
+        const retry = (event: Event) => {
+          if (attempt !== playAttempt.current) return;
+          if (event instanceof window.KeyboardEvent && (event.repeat || event.isComposing)) return;
+          if (event.target instanceof window.Element && event.target.closest(".music-button, .br-music")) return;
+          void playMusic(player, backroom, true);
+        };
+        for (const event of events) document.addEventListener(event, retry);
+        autoplayRetry.current = () => {
+          for (const event of events) document.removeEventListener(event, retry);
+        };
+        return;
+      }
       setPlaying(false);
       setMusicFailed(true);
       notify(backroom
         ? "비트를 재생하지 못했어요. 비트 켜기를 다시 눌러 주세요."
         : "음악을 재생하지 못했어요. 다시 누르거나 다른 브라우저에서 확인해주세요.");
     }
-  }
+  }, [cancelAutoplayRetry, notify]);
+  useEffect(() => {
+    if (hasMusic && audio.current) void requestPlayback(audio.current, false, true);
+  }, [hasMusic, requestPlayback]);
   function toggleMusic() {
     if (!audio.current || !currentMusic.src) return;
+    cancelAutoplayRetry();
     if (playing) {
+      musicWanted.current = false;
       playAttempt.current += 1;
       audio.current.pause();
       setPlaying(false);
     } else {
-      if (inBackroom) {
-        document.querySelectorAll<HTMLVideoElement>("#backroom video").forEach((video) => {
-          if (!video.muted && !video.paused) video.pause();
-        });
-      }
       void requestPlayback(audio.current, inBackroom);
     }
   }
-  function pauseForVideoSound() {
-    playAttempt.current += 1;
-    audio.current?.pause();
-    setPlaying(false);
-  }
   function switchMusic(track: Invitation["music"], shouldPlay: boolean, time: number, backroom: boolean) {
     const player = audio.current;
+    musicWanted.current = Boolean(track.src && shouldPlay);
+    cancelAutoplayRetry();
     playAttempt.current += 1;
     setPlaying(false);
     setMusicFailed(false);
@@ -263,7 +290,7 @@ export default function App() {
   function enterBackroom() {
     if (!config.backroom) return;
     returnMusic.current = {
-      playing,
+      playing: musicWanted.current,
       time: audio.current?.currentTime ?? 0,
       scroll: window.scrollY,
     };
@@ -755,7 +782,6 @@ export default function App() {
           playing={playing}
           musicFailed={musicFailed}
           onToggleMusic={toggleMusic}
-          onVideoSound={pauseForVideoSound}
           onExit={exitBackroom}
         />
       )}
@@ -764,16 +790,20 @@ export default function App() {
           ref={audio}
           src={currentMusic.src ?? undefined}
           loop={currentMusic.loop}
-          preload="none"
+          preload={currentMusic.src ? "auto" : "none"}
           onLoadedMetadata={() => {
             if (resumePoint.current === null || !audio.current) return;
             try { audio.current.currentTime = resumePoint.current; resumePoint.current = null; } catch { /* 미디어를 탐색할 수 없으면 기본 위치를 유지합니다. */ }
           }}
-          onPlay={(event) => setPlaying(!event.currentTarget.paused)}
+          onPlay={(event) => {
+            if (!event.currentTarget.paused) cancelAutoplayRetry();
+            setPlaying(!event.currentTarget.paused);
+          }}
           onPause={(event) => setPlaying(!event.currentTarget.paused)}
           onEnded={() => setPlaying(false)}
           onError={() => {
             playAttempt.current += 1;
+            cancelAutoplayRetry();
             setMusicFailed(true);
             setPlaying(false);
             notify(

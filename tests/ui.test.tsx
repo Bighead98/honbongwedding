@@ -371,7 +371,7 @@ describe('계좌·주소 복사와 수동 대안', () => {
   });
 });
 
-describe('음악의 명시적인 재생과 실패 처리', () => {
+describe('음악 자동 재생과 사용자 조작·실패 처리', () => {
   it('음원이 없으면 음악 버튼과 audio 요소를 만들지 않는다', () => {
     render(<App />);
     assert.equal(screen.queryByRole('button', { name: /음악|음원|다시 재생/ }), null);
@@ -380,18 +380,14 @@ describe('음악의 명시적인 재생과 실패 처리', () => {
     assert.equal(playCalls, 0);
   });
 
-  it('기본 음원은 자동재생하지 않고 사용자가 켠 뒤 스크롤에도 유지되며 끄면 일시정지한다', async () => {
+  it('페이지를 열면 음악을 시작하고 스크롤에도 유지하며 직접 끈 뒤에는 자동으로 다시 켜지 않는다', async () => {
     invitation.music = structuredClone(baseline.music);
     assert.equal(invitation.music.rightsConfirmed, false, 'UI 재생과 공개 권리 검수는 별도로 처리한다.');
     render(<App />);
     const audio = audioElement();
     assert.equal(audio.getAttribute('src'), baseline.music.src);
     assert.equal(audio.loop, true);
-    assert.equal(audio.getAttribute('preload'), 'none');
-    assert.equal(audio.hasAttribute('autoplay'), false);
-    assert.equal(audio.autoplay, false);
-    assert.equal(playCalls, 0, '렌더링만으로 소리를 자동 재생하면 안 된다.');
-    fireEvent.click(screen.getByRole('button', { name: '음악 켜기' }));
+    assert.equal(audio.getAttribute('preload'), 'auto');
     const stop = await screen.findByRole('button', { name: '음악 끄기' });
     assert.equal(stop.getAttribute('aria-pressed'), 'true');
     assert.equal(playCalls, 1);
@@ -400,6 +396,73 @@ describe('음악의 명시적인 재생과 실패 처리', () => {
     fireEvent.click(stop);
     assert.equal(pauseCalls, 1);
     assert.equal(screen.getByRole('button', { name: '음악 켜기' }).getAttribute('aria-pressed'), 'false');
+    fireEvent.pointerUp(document.body);
+    fireEvent.click(document.body);
+    fireEvent.keyDown(document, { key: 'ArrowDown' });
+    assert.equal(playCalls, 1, '사용자가 멈춘 음악을 후속 터치나 키보드 입력으로 재시작하지 않는다.');
+  });
+
+  it('브라우저가 자동 재생을 막으면 오류 안내 없이 기다렸다가 첫 화면 터치에서 한 번 재시도한다', async () => {
+    enableMusic();
+    Object.defineProperty(dom.window.HTMLMediaElement.prototype, 'play', {
+      configurable: true,
+      value: function (this: HTMLMediaElement) {
+        playCalls += 1;
+        if (playCalls === 1) return Promise.reject(new dom.window.DOMException('blocked', 'NotAllowedError'));
+        Object.defineProperty(this, 'paused', { configurable: true, writable: true, value: false });
+        this.dispatchEvent(new dom.window.Event('play'));
+        return Promise.resolve();
+      },
+    });
+    render(<App />);
+    await act(async () => {});
+    assert.equal(playCalls, 1);
+    assert.equal(audioElement().paused, true);
+    assert.equal(document.querySelector('.toast')?.textContent, '');
+    fireEvent.pointerUp(document.body);
+    await screen.findByRole('button', { name: '음악 끄기' });
+    assert.equal(playCalls, 2);
+    fireEvent.click(document.body);
+    fireEvent.keyDown(document, { key: 'ArrowDown' });
+    assert.equal(playCalls, 2, '자동 시작 후에는 재시도 리스너를 제거한다.');
+  });
+
+  it('자동 재생 대기 중 음악 버튼은 중복 재생 없이 작동하고 화면 제거 후에는 재시도하지 않는다', async () => {
+    enableMusic();
+    Object.defineProperty(dom.window.HTMLMediaElement.prototype, 'play', {
+      configurable: true,
+      value: function (this: HTMLMediaElement) {
+        playCalls += 1;
+        if (playCalls === 1) return Promise.reject(new dom.window.DOMException('blocked', 'NotAllowedError'));
+        Object.defineProperty(this, 'paused', { configurable: true, writable: true, value: false });
+        this.dispatchEvent(new dom.window.Event('play'));
+        return Promise.resolve();
+      },
+    });
+    const view = render(<App />);
+    await act(async () => {});
+    const start = screen.getByRole('button', { name: '음악 켜기' });
+    fireEvent.pointerUp(start);
+    fireEvent.click(start);
+    await screen.findByRole('button', { name: '음악 끄기' });
+    assert.equal(playCalls, 2);
+    view.unmount();
+    fireEvent.click(document.body);
+    assert.equal(playCalls, 2);
+    Object.defineProperty(dom.window.HTMLMediaElement.prototype, 'play', {
+      configurable: true,
+      value: () => {
+        playCalls += 1;
+        return Promise.reject(new dom.window.DOMException('blocked', 'NotAllowedError'));
+      },
+    });
+    const blockedView = render(<App />);
+    await act(async () => {});
+    const callsBeforeUnmount = playCalls;
+    blockedView.unmount();
+    fireEvent.click(document.body);
+    fireEvent.keyDown(document, { key: 'Enter' });
+    assert.equal(playCalls, callsBeforeUnmount, '대기 중 제거된 화면의 재시도 리스너를 정리한다.');
   });
 
   it('play Promise 거절은 안내와 다시 재생 상태로 처리하고 화면을 유지한다', async () => {
@@ -409,6 +472,7 @@ describe('음악의 명시적인 재생과 실패 처리', () => {
       value: () => Promise.reject(new dom.window.DOMException('blocked', 'NotAllowedError')),
     });
     render(<App />);
+    await act(async () => {});
     fireEvent.click(screen.getByRole('button', { name: '음악 켜기' }));
     await waitFor(() => assert.match(screen.getByRole('status').textContent ?? '', /음악을 재생하지 못했어요/));
     assert.ok(screen.getByText('다시 재생'));
@@ -419,7 +483,6 @@ describe('음악의 명시적인 재생과 실패 처리', () => {
   it('파일 오류가 나도 청첩장과 공유 기능을 유지하고 재생 중 상태를 해제한다', async () => {
     enableMusic();
     render(<App />);
-    fireEvent.click(screen.getByRole('button', { name: '음악 켜기' }));
     await screen.findByRole('button', { name: '음악 끄기' });
     fireEvent.error(audioElement());
     assert.match(screen.getByRole('status').textContent ?? '', /음악 파일을 불러오지 못했어요/);
@@ -546,7 +609,6 @@ describe('BACKROOM 코드 입력과 한 음원의 전환', () => {
     enableMusic();
     enableBackroom();
     render(<App />);
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '음악 켜기' })); });
     await screen.findByRole('button', { name: '음악 끄기' });
     const audio = audioElement();
     audio.currentTime = 42.5;
@@ -567,6 +629,7 @@ describe('BACKROOM 코드 입력과 한 음원의 전환', () => {
     enableMusic();
     enableBackroom();
     render(<App />);
+    fireEvent.click(await screen.findByRole('button', { name: '음악 끄기' }));
     const audio = audioElement();
     audio.currentTime = 18.25;
     window.scrollTo(0, 560);
@@ -591,7 +654,7 @@ describe('BACKROOM 코드 입력과 한 음원의 전환', () => {
     assert.equal(audio.getAttribute('src'), normalTrack);
     assert.equal(audio.currentTime, 18.25);
     assert.equal(audio.paused, true);
-    assert.equal(mediaEvents.filter(event => event.action === 'play' && event.src === normalTrack).length, 0);
+    assert.equal(mediaEvents.filter(event => event.action === 'play' && event.src === normalTrack).length, 1, '직접 끈 A를 복귀 시 다시 재생하지 않는다.');
     assert.equal(window.scrollY, 560);
     assert.ok(document.activeElement === trigger);
   });
@@ -600,7 +663,6 @@ describe('BACKROOM 코드 입력과 한 음원의 전환', () => {
     enableMusic();
     enableBackroom();
     render(<App />);
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '음악 켜기' })); });
     await screen.findByRole('button', { name: '음악 끄기' });
     const audio = audioElement();
     audio.currentTime = 37.75;
@@ -618,6 +680,35 @@ describe('BACKROOM 코드 입력과 한 음원의 전환', () => {
     assert.equal(audio.currentTime, 37.75);
     assert.equal(audio.getAttribute('src'), normalTrack);
     assertSwitch(backroomTrack, normalTrack, mediaEvents.slice(beforeExit));
+  });
+
+  it('자동 시작을 기다리던 A는 백룸에서 돌아온 동작으로 다시 재생하고 사용자가 끈 상태와 구분한다', async () => {
+    enableMusic();
+    enableBackroom();
+    let normalAttempts = 0;
+    Object.defineProperty(dom.window.HTMLMediaElement.prototype, 'play', {
+      configurable: true,
+      value: function (this: HTMLMediaElement) {
+        playCalls += 1;
+        mediaEvents.push({ action: 'play', src: this.getAttribute('src') });
+        if (this.getAttribute('src') === normalTrack && ++normalAttempts <= 2)
+          return Promise.reject(new dom.window.DOMException('blocked', 'NotAllowedError'));
+        Object.defineProperty(this, 'paused', { configurable: true, writable: true, value: false });
+        this.dispatchEvent(new dom.window.Event('play'));
+        return Promise.resolve();
+      },
+    });
+    render(<App />);
+    await act(async () => {});
+    assert.equal(audioElement().paused, true);
+    unlock();
+    await screen.findByRole('button', { name: '비트 끄기' });
+    assert.equal(normalAttempts, 2);
+    await act(async () => { fireEvent.click(screen.getAllByRole('button', { name: '원래 청첩장으로' })[0]); });
+    await screen.findByRole('button', { name: '음악 끄기' });
+    assert.equal(normalAttempts, 3);
+    assert.equal(audioElement().getAttribute('src'), normalTrack);
+    assert.equal(audioElement().paused, false);
   });
 
   it('A 없이 입장한 B의 비트 버튼은 한 audio를 일시정지·재생하고 A가 없는 복귀는 조용히 유지한다', async () => {
@@ -650,12 +741,14 @@ describe('BACKROOM 코드 입력과 한 음원의 전환', () => {
   it('B의 play 거절에도 BACKROOM 화면을 유지하고 비트 버튼으로 안전하게 다시 시도한다', async () => {
     enableMusic();
     enableBackroom();
+    let backroomAttempts = 0;
     Object.defineProperty(dom.window.HTMLMediaElement.prototype, 'play', {
       configurable: true,
       value: function (this: HTMLMediaElement) {
         playCalls += 1;
         mediaEvents.push({ action: 'play', src: this.getAttribute('src') });
-        if (playCalls === 1) return Promise.reject(new dom.window.DOMException('blocked', 'NotAllowedError'));
+        if (this.getAttribute('src') === backroomTrack && ++backroomAttempts === 1)
+          return Promise.reject(new dom.window.DOMException('blocked', 'NotAllowedError'));
         Object.defineProperty(this, 'paused', { configurable: true, writable: true, value: false });
         this.dispatchEvent(new dom.window.Event('play'));
         return Promise.resolve();
@@ -670,7 +763,7 @@ describe('BACKROOM 코드 입력과 한 음원의 전환', () => {
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: '비트 켜기' })); });
     await screen.findByRole('button', { name: '비트 끄기' });
     assert.equal(audioElement().getAttribute('src'), backroomTrack);
-    assert.equal(playCalls, 2);
+    assert.equal(backroomAttempts, 2);
     assert.equal(document.querySelectorAll('audio').length, 1);
   });
 
@@ -683,7 +776,9 @@ describe('BACKROOM 코드 입력과 한 음원의 전환', () => {
       value: function (this: HTMLMediaElement) {
         playCalls += 1;
         mediaEvents.push({ action: 'play', src: this.getAttribute('src') });
-        return new Promise<void>((_resolve, reject) => { pending.reject = reject; });
+        return new Promise<void>((_resolve, reject) => {
+          if (this.getAttribute('src') === backroomTrack) pending.reject = reject;
+        });
       },
     });
     render(<App />);
@@ -703,7 +798,7 @@ describe('BACKROOM 코드 입력과 한 음원의 전환', () => {
     assert.equal(document.querySelector('.toast')?.textContent ?? '', '');
   });
 
-  it('열 사진과 기분 순환·무음 영상을 유지하고 영상 소리와 비트가 겹치지 않게 전환한다', async () => {
+  it('열 사진과 기분 순환을 유지하고 조작 버튼 없는 무음 영상은 첫 동작 후 계속 반복 재생한다', async () => {
     enableMusic();
     enableBackroom();
     let videoAttempts = 0;
@@ -743,7 +838,11 @@ describe('BACKROOM 코드 입력과 한 음원의 전환', () => {
     assert.ok(within(main).queryByText('검증 영상') === null, '영상의 접근 가능한 설명은 유지하고 별도 보이는 설명은 제거한다.');
     assert.equal(video.defaultMuted, true);
     assert.equal(video.muted, true);
-    assert.equal(video.controls, true);
+    assert.equal(video.controls, false);
+    assert.equal(video.tabIndex, -1);
+    assert.equal(video.draggable, false);
+    assert.ok(video.hasAttribute('disablepictureinpicture'));
+    assert.ok(video.hasAttribute('disableremoteplayback'));
     assert.equal(video.playsInline, true);
     assert.equal(video.loop, true);
     assert.equal(video.getAttribute('preload'), 'auto');
@@ -752,16 +851,21 @@ describe('BACKROOM 코드 입력과 한 음원의 전환', () => {
     assert.equal(video.getAttribute('src'), '/synthetic-test-video.mp4');
     const audio = audioElement();
     assert.equal(mediaEvents.filter(event => event.action === 'play' && event.src === video.getAttribute('src')).length, 1, '영상은 마운트에서 한 번만 재생을 요청한다.');
-    const retryVideo = screen.getByRole('button', { name: '영상 재생' });
+    assert.ok(screen.queryByRole('button', { name: '영상 재생' }) === null);
     assert.equal(video.paused, true);
     assert.equal(audio.paused, false, '영상 자동 재생 거절은 비트 재생을 멈추지 않는다.');
     assertBackroom();
-    await act(async () => { fireEvent.click(retryVideo); });
-    assert.ok(screen.queryByRole('button', { name: '영상 재생' }) === null);
+    await act(async () => { fireEvent.keyDown(document, { key: 'Enter' }); });
     assert.equal(video.paused, false);
     const attemptsAfterRetry = videoAttempts;
     assert.equal(audio.paused, false, '무음 영상은 비트와 함께 재생할 수 있다.');
-    act(() => { video.pause(); video.muted = false; fireEvent.volumeChange(video); });
+    video.currentTime = 3;
+    fireEvent.click(video);
+    fireEvent.keyDown(video, { key: 'ArrowLeft' });
+    fireEvent.keyDown(video, { key: ' ' });
+    assert.equal(video.currentTime, 3, '영상 클릭·키보드 입력으로 되감지 않는다.');
+    assert.equal(video.paused, false, '영상 클릭·키보드 입력으로 일시정지하지 않는다.');
+    assert.equal(fireEvent.contextMenu(video), false, '영상의 컨텍스트 메뉴를 열지 않는다.');
     const moodButton = screen.getByRole<HTMLButtonElement>('button', { name: '기분 바꾸기' });
     const card = moodButton.closest<HTMLElement>('.br-mood');
     assert.ok(card);
@@ -801,18 +905,19 @@ describe('BACKROOM 코드 입력과 한 음원의 전환', () => {
     assert.equal(moodButton.disabled, false);
     assert.ok(document.activeElement === moodButton);
     for (const text of ['자기야!!!!', '난 버려졌어!!!!', '맞짱!!!!', '으어어어어어어', '구아아아아아악']) assert.ok((main.textContent ?? '').includes(text));
-    assert.equal(video.muted, false, '기분 갱신은 사용자가 바꾼 영상 무음을 덮어쓰지 않는다.');
+    assert.equal(video.muted, true, '기분을 바꿔도 영상은 무음을 유지한다.');
     fireEvent.click(screen.getByRole('button', { name: '비트 끄기' }));
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: '비트 켜기' })); });
-    assert.equal(video.muted, false, '음악 상태 갱신도 영상 설정을 유지한다.');
+    assert.equal(video.muted, true, '음악 상태 갱신도 영상 무음을 유지한다.');
     assert.equal(videoAttempts, attemptsAfterRetry, '기분이나 음악 갱신은 영상을 다시 재생하지 않는다.');
-    await act(async () => { await video.play(); });
+    act(() => { video.muted = false; fireEvent.volumeChange(video); });
+    assert.equal(video.muted, true, '영상은 B 음악과 겹치지 않도록 무음으로 유지한다.');
     assert.equal(video.paused, false);
-    assert.equal(audio.paused, true, '소리 있는 영상이 시작되면 비트는 멈춘다.');
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '비트 켜기' })); });
-    assert.equal(video.paused, true);
     assert.equal(audio.paused, false);
-    assert.equal(video.muted, false);
+    await act(async () => { fireEvent.click(screen.getAllByRole('button', { name: '원래 청첩장으로' })[0]); });
+    assert.equal(video.paused, true, '백룸을 벗어나면 영상 재생을 정리한다.');
+    fireEvent.keyDown(document, { key: 'Enter' });
+    assert.equal(videoAttempts, attemptsAfterRetry, '정리된 영상은 후속 동작으로 다시 재생하지 않는다.');
   });
 });
 

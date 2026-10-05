@@ -12,7 +12,6 @@ interface BackroomProps {
   playing: boolean;
   musicFailed: boolean;
   onToggleMusic: () => void;
-  onVideoSound?: () => void;
   onExit: () => void;
 }
 
@@ -53,14 +52,11 @@ export default function Backroom({
   playing,
   musicFailed,
   onToggleMusic,
-  onVideoSound,
   onExit,
 }: BackroomProps) {
   const main = useRef<HTMLElement>(null);
   const videoElement = useRef<HTMLVideoElement>(null);
-  const videoPlaybackVersion = useRef(0);
   const [moodStep, setMoodStep] = useState(0);
-  const [videoBlocked, setVideoBlocked] = useState(false);
   const mood = moods[moodStep % moods.length];
   const groomPortrait = photos.find((photo) => photo.id === "backroom-03");
   const bridePortrait = photos.find((photo) => photo.id === "backroom-08");
@@ -81,45 +77,64 @@ export default function Backroom({
     if (!element) return;
     element.defaultMuted = true;
     element.muted = true;
-    const requestVersion = ++videoPlaybackVersion.current;
     let active = true;
-    let request: Promise<void> | undefined;
-    try {
-      request = element.play();
-    } catch (error) {
-      request = Promise.reject(error);
-    }
-    void Promise.resolve(request)
-      .then(() => {
-        if (active && requestVersion === videoPlaybackVersion.current) setVideoBlocked(false);
-      })
-      .catch(() => {
-        if (active && requestVersion === videoPlaybackVersion.current) setVideoBlocked(true);
-      });
+    let blocked = false;
+    let pending = false;
+
+    const requestPlayback = () => {
+      if (!active || pending) return;
+      element.muted = true;
+      pending = true;
+      let request: Promise<void> | undefined;
+      try {
+        request = element.play();
+      } catch (error) {
+        request = Promise.reject(error);
+      }
+      void Promise.resolve(request)
+        .then(() => {
+          if (!active) return;
+          pending = false;
+          blocked = false;
+        })
+        .catch(() => {
+          if (!active) return;
+          pending = false;
+          blocked = true;
+        });
+    };
+
+    const retryForPointer = (event: PointerEvent) => {
+      if (blocked && event.button === 0) requestPlayback();
+    };
+    const retryForKeyboard = (event: KeyboardEvent) => {
+      if (
+        !blocked || event.repeat || event.isComposing ||
+        ["Escape", "Tab", "Shift", "Control", "Alt", "Meta"].includes(event.key)
+      ) return;
+      requestPlayback();
+    };
+    const retryWhenVisible = () => {
+      if (blocked && document.visibilityState === "visible") requestPlayback();
+    };
+
+    window.addEventListener("pointerdown", retryForPointer, true);
+    window.addEventListener("keydown", retryForKeyboard, true);
+    document.addEventListener("visibilitychange", retryWhenVisible);
+    requestPlayback();
+
     return () => {
       active = false;
-      videoPlaybackVersion.current += 1;
+      window.removeEventListener("pointerdown", retryForPointer, true);
+      window.removeEventListener("keydown", retryForKeyboard, true);
+      document.removeEventListener("visibilitychange", retryWhenVisible);
       element.pause();
     };
   }, [video?.src]);
 
-  function notifyVideoSound(event: SyntheticEvent<HTMLVideoElement>) {
+  function keepVideoMuted(event: SyntheticEvent<HTMLVideoElement>) {
     const element = event.currentTarget;
-    if (!element.muted && !element.paused) onVideoSound?.();
-  }
-
-  async function retryVideo() {
-    const element = videoElement.current;
-    if (!element) return;
-    const requestVersion = videoPlaybackVersion.current;
-    try {
-      await element.play();
-      if (videoElement.current === element && requestVersion === videoPlaybackVersion.current)
-        setVideoBlocked(false);
-    } catch {
-      if (videoElement.current === element && requestVersion === videoPlaybackVersion.current)
-        setVideoBlocked(true);
-    }
+    if (!element.muted) element.muted = true;
   }
 
   function renderPhoto(photo: PhotoData, index: number, layoutOverride?: string) {
@@ -156,29 +171,31 @@ export default function Backroom({
       <section className="br-video-section" aria-labelledby="br-video-title">
         <p className="br-section-index">BONUS / STILL NOT CALM</p>
         <h2 id="br-video-title">움직이는<br /><span>증거까지.</span></h2>
-        <div className="br-video-frame">
+        <div className="br-video-frame" onContextMenu={(event) => event.preventDefault()}>
           <video
             key={video.src}
             ref={videoElement}
             src={video.src}
             poster={video.poster}
-            controls
+            controls={false}
+            controlsList="nodownload nofullscreen noremoteplayback"
+            disablePictureInPicture
+            disableRemotePlayback
+            x-webkit-airplay="deny"
             autoPlay
+            muted
             playsInline
             loop
             preload="auto"
+            tabIndex={-1}
+            draggable={false}
             aria-label={video.label}
-            onPlay={notifyVideoSound}
-            onVolumeChange={notifyVideoSound}
+            onPlay={keepVideoMuted}
+            onVolumeChange={keepVideoMuted}
           >
             이 브라우저에서는 영상을 재생할 수 없습니다.
           </video>
         </div>
-        {videoBlocked && (
-          <button className="br-video-play" type="button" onClick={() => void retryVideo()}>
-            영상 재생 <span aria-hidden="true">▶</span>
-          </button>
-        )}
       </section>
     );
   }
