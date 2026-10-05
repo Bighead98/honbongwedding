@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="480" viewBox="0 0 720 480" role="img" aria-labelledby="title desc" font-family="SUIT, sans-serif" font-weight="600">
+  <title id="title">웨딩 시그니처 약도</title>
+  <desc id="desc">오른쪽 합정역 2번 출구에서 왼쪽 홍대입구 방향으로 양화로를 따라 도보 약 4분. 웨딩 시그니처는 우리은행 옆에 있습니다.</desc>
+  <rect width="720" height="480" fill="#f0f0e8"/>
+  <g fill="#e3e5da"><rect x="465" y="44" width="220" height="81" rx="3"/><rect x="310" y="44" width="130" height="81" rx="3"/><rect x="34" y="44" width="166" height="81" rx="3"/><rect x="532" y="300" width="150" height="127" rx="3"/><rect x="350" y="300" width="162" height="127" rx="3"/><rect x="218" y="331" width="114" height="96" rx="3"/><rect x="34" y="302" width="165" height="125" rx="3"/></g>
+  <path d="M0 222H720" fill="none" stroke="#fff" stroke-width="105"/>
+  <path d="M0 222H720" stroke="#d0d5c6" stroke-width="2" stroke-dasharray="13 9"/>
+  <g text-anchor="middle" fill="#656e59"><text x="110" y="193" font-size="28">양화로</text><text x="120" y="258" font-size="24">← 홍대입구 방향</text></g>
+  <g transform="translate(639 209)"><circle r="23" fill="#668355"/><text y="8" font-size="24" text-anchor="middle" fill="#fff">2</text></g>
+  <g text-anchor="middle" fill="#4a5740"><text x="639" y="164" font-size="30">합정역</text><text x="639" y="282" font-size="24">2번 출구</text></g>
+  <path d="M594 252H390V287" stroke="#8c9575" stroke-width="4" stroke-dasharray="6 6" fill="none"/>
+  <path d="m380 280 10 10 10-10" fill="none" stroke="#8c9575" stroke-width="4"/>
+  <text x="500" y="237" font-size="24" text-anchor="middle" fill="#667052">도보 약 4분</text>
+  <rect x="336" y="300" width="162" height="101" rx="4" fill="#869273"/>
+  <g fill="#fff" text-anchor="middle"><text x="417" y="334" font-size="24">웨딩 시그니처</text><text x="417" y="370" font-size="22">2F 트리니티 홀</text></g>
+  <text x="284" y="370" font-size="24" text-anchor="middle" fill="#657052">우리은행</text>
+</svg>

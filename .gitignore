@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.tools/
+.wrangler/
+.env*
+!.env.example
+public/images/originals/
+assets/originals/
+assets/user-originals/
+backroom image/
+music/
+artifacts/
+output/
+*.log
